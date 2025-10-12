@@ -1,0 +1,1 @@
+{"rule":"MD_BASEFORM","sentence":"^\\QDirected Edge Bundling: Now, xMSEB, can bundles edges by direction, meaning, that edges which are parallel are separate from anti-parellel edges.\\E$"}
