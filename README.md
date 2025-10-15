@@ -3,7 +3,14 @@
 The **Extended MSEB (xMSEB)** project builds upon the original [Brain Bundler](https://github.com/NeuroanatomyAndConnectivity/brainbundler) tool by incorporating improvements to the Mean Shift Edge Bundling (MSEB) algorithm. This repository provides the upgraded source files for extending and refining the bundling of brain connectivity data.
 
 ---
-
+Original Dataset.
+![Unbundled Graph Representation](original_dataset.png)
+Bundled Output.
+![Bundled Graph Representation](bundled_dataset.png)
+Low c_thr value, we are bundling every edge.
+![Everything is bundled](too_bundled_dataset.png)
+(Depending on one parameter (c_thr, meaning: compatibility threshold) we can adjust what similar edges we are bundling together.)
+---
 ## Overview
 
 **Extended MSEB** is designed to improve the visual and structural clarity of bundled brain connectivity graphs. It enhances the original mean-shift bundling algorithm to produce smoother, more anatomically faithful bundles while maintaining compatibility with the existing `brainbundler` framework.
@@ -133,7 +140,7 @@ Please cite the original authors and this repository when using the xMSEB algori
 ## GitHub Pages
 
 Documentation, Code and examples can be found on the GitHub Pages site:  
- [**github.com/ToporDB/xMSEB**](https://github.com/xMSEB/xMSEB)
+ [**github.com/xMSEB/xMSEB**](https://github.com/xMSEB/xMSEB)
 
 ## Master's thesis
 
