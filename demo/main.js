@@ -149,9 +149,50 @@ function parseVTKBinary(buffer, headerText) {
   return { nodes, edges };
 }
 
+// ── WebGPU detection ─────────────────────────────────────────────────────────
+
+/**
+ * Probe for WebGPU support. The check has to cover three failure modes that all
+ * lead to "silently falls back to CPU":
+ *   1. `navigator.gpu` missing (Firefox stable < 141, Safari without the flag)
+ *   2. `requestAdapter()` resolves to null (compatible API but no usable GPU)
+ *   3. A fallback / software adapter is returned (Firefox on some configs hands
+ *      out an adapter whose backend is software-only — the bundler "runs" but at
+ *      CPU-like speed and the user can't tell the GPU path is broken).
+ * We also confirm a device can actually be acquired, since that's the next step
+ * the WASM does and any failure there is what surfaces as the silent fallback.
+ */
+async function isWebGPUAvailable() {
+  if (!('gpu' in navigator)) return false;
+  try {
+    const adapter = await navigator.gpu.requestAdapter({ powerPreference: 'high-performance' });
+    if (!adapter) return false;
+    if (adapter.isFallbackAdapter || adapter.info?.isFallbackAdapter) return false;
+    // Firefox exposes a GPUAdapterInfo whose vendor/architecture/device/description
+    // are all empty strings when WebGPU isn't really usable on the system (the
+    // compute pipeline runs but silently produces no work). A populated info
+    // object — even partially — indicates a real backend.
+    const info = adapter.info;
+    if (info && !info.vendor && !info.architecture && !info.device && !info.description) {
+      return false;
+    }
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 // ── App ──────────────────────────────────────────────────────────────────────
 
 async function main() {
+  // Probe WebGPU once at startup. We surface the warning only when the GPU view
+  // is selected — CPU and MSEB still work, so on other views it'd be noise.
+  const webgpuOK = await isWebGPUAvailable();
+  const warningEl = document.getElementById('webgpu-warning');
+  const updateWebGPUWarning = (mode) => {
+    if (warningEl) warningEl.hidden = webgpuOK || mode !== 'bundled';
+  };
+
   const scene = new Scene(document.getElementById('canvas'));
   const ui    = new UI(
     { onDatasetSelect, onFileChange, onVtkFile, onParamChange, onViewChange, onColorChange },
@@ -178,6 +219,7 @@ async function main() {
   let xmsebCpuValid   = false;
   let xmsebCpuRunning = false;
   let viewMode    = 'bundled';
+  updateWebGPUWarning(viewMode);
 
   // Cached results for export — populated as each technique runs
   let exportBundled  = null;
@@ -259,6 +301,7 @@ async function main() {
   function onViewChange(mode) {
     viewMode = mode;
     scene.setViewMode(mode);
+    updateWebGPUWarning(mode);
     if (mode === 'mseb' && !msebValid && !msebRunning) {
       runMsebNow();
     }

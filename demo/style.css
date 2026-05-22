@@ -496,3 +496,32 @@ body.light .custom-warning { background: #fff3e0; color: #e65100; }
   font-size: 11px;
   opacity: 0.6;
 }
+
+#webgpu-warning {
+  position: absolute;
+  top: 16px;
+  left: 50%;
+  transform: translateX(-50%);
+  max-width: 540px;
+  padding: 10px 14px;
+  background: #3a2a00;
+  border: 1px solid #4a3a00;
+  border-radius: 6px;
+  color: var(--warn);
+  font-size: 12px;
+  line-height: 1.45;
+  text-align: left;
+  z-index: 10;
+}
+
+#webgpu-warning strong {
+  margin-right: 4px;
+}
+
+#webgpu-warning[hidden] { display: none; }
+
+body.light #webgpu-warning {
+  background: #fff3e0;
+  border-color: #ffcc80;
+  color: #e65100;
+}

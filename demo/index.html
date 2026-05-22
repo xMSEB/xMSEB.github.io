@@ -186,6 +186,10 @@
   <main id="viewport">
     <canvas id="canvas"></canvas>
     <div id="spinner" hidden><div class="spin-ring"></div></div>
+    <div id="webgpu-warning" hidden>
+      <strong>WebGPU not available.</strong>
+      The GPU bundler can't run in this browser and may fall back to CPU. Try Chrome, Edge, Safari, or Firefox&nbsp;141+ and check WebGPU support for your operating system. Use xMSEB&nbsp;(CPU) instead.
+    </div>
     <div id="empty-msg">
       <div class="empty-inner">
         <p>Load a nodes and edges file to begin</p>
