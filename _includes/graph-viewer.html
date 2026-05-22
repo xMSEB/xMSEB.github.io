@@ -1,0 +1,28 @@
+{% comment %} _includes/graph-viewer.html {% endcomment %}
+{% if include.wide %}
+<div style="width:100%;position:relative;">
+{% endif %}
+  <figure class="graph-viewer-facade" style="position:relative;cursor:pointer;background:#fff;margin:0 auto;">
+    <img src="{{ include.thumbnail }}" style="width:100%;display:block;" alt="{{ include.caption }}">
+    <div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;">
+      <button style="font-size:1.2rem;padding:.6em 1.4em;background:rgba(0,0,0,.6);color:#fff;border:1px solid #fff;border-radius:4px;cursor:pointer;">
+        ▶ Load 3D viewer
+      </button>
+    </div>
+    <script>
+      document.currentScript.closest('.graph-viewer-facade').addEventListener('click', function() {
+        var h = this.offsetHeight;
+        var maxWidth = this.style.maxWidth;
+        var margin = this.style.margin;
+
+        var f = document.createElement('iframe');
+        f.src = "{{ include.src }}?data={{ include.data }}&edgeColor={{ include.edge_color | default: '4fc3f7' }}&bg={{ include.bg | default: 'ffffff' }}&mode={{ include.mode | default: 'xmseb' }}";
+        f.style.cssText = "width:100%;height:" + h + "px;border:0;display:block;max-width:" + maxWidth + ";margin:" + margin + ";";
+        f.allowFullscreen = true;
+        this.replaceWith(f);
+      }, { once: true });
+    </script>
+  </figure>
+{% if include.wide %}
+</div>
+{% endif %}

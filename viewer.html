@@ -1,0 +1,509 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Graph Viewer</title>
+  <script type="importmap">
+  {
+    "imports": {
+      "three":          "https://cdn.jsdelivr.net/npm/three@0.169.0/build/three.module.js",
+      "three/addons/":  "https://cdn.jsdelivr.net/npm/three@0.169.0/examples/jsm/"
+    }
+  }
+  </script>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    html, body { width: 100%; height: 100%; overflow: hidden; }
+    canvas { display: block; width: 100% !important; height: 100% !important; }
+
+    #toolbar {
+      position: fixed;
+      bottom: 16px;
+      left: 50%;
+      transform: translateX(-50%);
+      display: flex;
+      gap: 4px;
+      padding: 4px;
+      background: rgba(20, 20, 20, 0.75);
+      backdrop-filter: blur(8px);
+      -webkit-backdrop-filter: blur(8px);
+      border-radius: 8px;
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      z-index: 10;
+    }
+    #toolbar[hidden] { display: none; }
+
+    #toolbar.light-bg {
+      background: rgba(240, 240, 240, 0.8);
+      border-color: rgba(0, 0, 0, 0.1);
+    }
+
+    .algo-btn {
+      padding: 6px 14px;
+      background: transparent;
+      border: 1px solid rgba(255, 255, 255, 0.12);
+      border-radius: 6px;
+      color: rgba(255, 255, 255, 0.5);
+      font-size: 12px;
+      font-family: system-ui, -apple-system, sans-serif;
+      cursor: pointer;
+      transition: all 0.15s;
+      white-space: nowrap;
+    }
+    .algo-btn:hover {
+      border-color: rgba(255, 255, 255, 0.25);
+      color: rgba(255, 255, 255, 0.8);
+    }
+    .algo-btn.active {
+      background: rgba(255, 255, 255, 0.08);
+      border-color: var(--algo-color, rgba(255, 255, 255, 0.3));
+      color: var(--algo-color, #fff);
+      font-weight: 600;
+    }
+
+    .light-bg .algo-btn {
+      border-color: rgba(0, 0, 0, 0.12);
+      color: rgba(0, 0, 0, 0.45);
+    }
+    .light-bg .algo-btn:hover {
+      border-color: rgba(0, 0, 0, 0.25);
+      color: rgba(0, 0, 0, 0.7);
+    }
+    .light-bg .algo-btn.active {
+      background: rgba(0, 0, 0, 0.06);
+      color: var(--algo-color, #333);
+    }
+
+    .algo-btn.no-gpu {
+      opacity: 0.35;
+      cursor: not-allowed;
+    }
+
+    #webgpu-notice {
+      position: fixed;
+      bottom: 56px;
+      left: 50%;
+      transform: translateX(-50%);
+      padding: 4px 10px;
+      background: rgba(20, 20, 20, 0.75);
+      backdrop-filter: blur(8px);
+      -webkit-backdrop-filter: blur(8px);
+      border-radius: 6px;
+      border: 1px solid rgba(255, 180, 0, 0.35);
+      color: rgba(255, 180, 0, 0.85);
+      font-size: 11px;
+      font-family: system-ui, -apple-system, sans-serif;
+      white-space: nowrap;
+      z-index: 10;
+    }
+    #webgpu-notice[hidden] { display: none; }
+    .light-bg-notice {
+      background: rgba(240, 240, 240, 0.85);
+      color: rgba(160, 100, 0, 0.9);
+      border-color: rgba(160, 100, 0, 0.3);
+    }
+  </style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div id="webgpu-notice" hidden></div>
+<div id="toolbar" hidden></div>
+<script type="module">
+/**
+ * viewer.html — standalone xMSEB graph viewer
+ *
+ * URL parameters:
+ *   data        Fallback path to a single JSON file             (default: graph.json)
+ *   gpu         Path to xMSEB (GPU) JSON file                   (optional)
+ *   cpu         Path to xMSEB (CPU) JSON file                   (optional)
+ *   mseb        Path to MSEB JSON file                          (optional)
+ *   unbundled   Path to Unbundled/original JSON file             (optional)
+ *   mode        Initial active algorithm: gpu|cpu|mseb|unbundled (default: gpu)
+ *   edgeColor   Hex color for ALL edges (overrides per-algo), no #  (optional)
+ *   opacity     Edge opacity 0–1                                (default: per-algo)
+ *   bg          Hex background color, no #                      (default: 0d0d0d)
+ *   nodeColor   Hex node color, no #                            (default: ffffff)
+ *   directed    1 to use dirStart→dirEnd gradient               (default: 0)
+ *   dirStart    Hex start color for directed gradient           (default: 26c6da)
+ *   dirEnd      Hex end color for directed gradient             (default: ef5350)
+ *
+ * When gpu/cpu/mseb/unbundled params are provided, the viewer loads those files
+ * and shows toggle buttons to switch between them. If none are set, falls back to
+ * loading the single `data` file and extracting the first available edge set.
+ *
+ * Jekyll usage example:
+ *   <iframe
+ *     src="/assets/viewer.html?gpu=graphs/email_gpu.json&mseb=graphs/email_mseb.json&unbundled=graphs/email_orig.json&bg=0d0d0d"
+ *     width="100%" height="500" frameborder="0" allowfullscreen>
+ *   </iframe>
+ */
+
+import * as THREE            from 'three';
+import { OrbitControls }     from 'three/addons/controls/OrbitControls.js';
+
+// ── Algorithm definitions ────────────────────────────────────────────────────
+
+const ALGORITHMS = [
+  { key: 'gpu',       param: 'gpu',       label: 'xMSEB (GPU)', color: '#4fc3f7', opacity: 0.55, edgeKeys: ['xmseb'] },
+  { key: 'cpu',       param: 'cpu',       label: 'xMSEB (CPU)', color: '#ce93d8', opacity: 0.55, edgeKeys: ['xmsebCpu', 'xmseb'] },
+  { key: 'mseb',      param: 'mseb',      label: 'MSEB',        color: '#69f0ae', opacity: 0.55, edgeKeys: ['mseb'] },
+  { key: 'unbundled', param: 'unbundled', label: 'Unbundled',   color: '#ff8a65', opacity: 0.45, edgeKeys: ['original'] },
+];
+
+// ── WebGPU support detection ─────────────────────────────────────────────────
+
+const GPU_SUPPORTED = typeof navigator !== 'undefined' && !!navigator.gpu;
+
+// ── URL config ───────────────────────────────────────────────────────────────
+
+const p               = new URLSearchParams(location.search);
+const DATA_URL        = p.get('data')      ?? 'graph.json';
+const MODE            = p.get('mode')      ?? 'gpu';
+const EDGE_HEX        = p.get('edgeColor');          // null if not set
+const EDGE_OVERRIDE   = EDGE_HEX != null;
+const OPACITY_PARAM   = p.get('opacity');
+const BG_HEX          = p.get('bg')        ?? '0d0d0d';
+const NODE_HEX        = p.get('nodeColor') ?? 'ffffff';
+const DIRECTED        = p.get('directed')  === '1';
+const DIR_START       = p.get('dirStart')  ?? '26c6da';
+const DIR_END         = p.get('dirEnd')    ?? 'ef5350';
+
+const BG_INT   = parseInt(BG_HEX,   16);
+const NODE_INT = parseInt(NODE_HEX, 16);
+
+// Auto-select blending: additive on dark backgrounds, normal on light ones
+const { r: br, g: bgc, b: bb } = { r: (BG_INT >> 16) & 0xff, g: (BG_INT >> 8) & 0xff, b: BG_INT & 0xff };
+const IS_LIGHT_BG = (br + bgc + bb) / (3 * 255) > 0.5;
+const BLENDING    = IS_LIGHT_BG ? THREE.NormalBlending : THREE.AdditiveBlending;
+
+// Check if any per-algorithm file params are provided
+const hasAlgoParams = ALGORITHMS.some(a => p.has(a.param));
+
+// ── Three.js setup ───────────────────────────────────────────────────────────
+
+const canvas   = document.getElementById('c');
+const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, preserveDrawingBuffer: true });
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.setClearColor(BG_INT, 1);
+
+const scene = new THREE.Scene();
+scene.add(new THREE.AmbientLight(0xffffff, 0.6));
+const dirLight = new THREE.DirectionalLight(0xffffff, 0.8);
+dirLight.position.set(1, 2, 3);
+scene.add(dirLight);
+
+const camera = new THREE.PerspectiveCamera(55, 1, 0.1, 50000);
+camera.position.set(0, 0, 200);
+
+const controls = new OrbitControls(camera, canvas);
+controls.enableDamping = true;
+controls.dampingFactor = 0.06;
+controls.minDistance   = 1;
+controls.maxDistance   = 20000;
+
+function onResize() {
+  renderer.setSize(window.innerWidth, window.innerHeight, false);
+  camera.aspect = window.innerWidth / window.innerHeight;
+  camera.updateProjectionMatrix();
+}
+window.addEventListener('resize', onResize);
+onResize();
+
+// ── Keyboard camera controls (WASD / arrow keys, Q/E for vertical) ──────────
+const _keys = new Set();
+const _isHandled = (c) =>
+  c === 'KeyW' || c === 'KeyA' || c === 'KeyS' || c === 'KeyD' ||
+  c === 'ArrowUp' || c === 'ArrowDown' || c === 'ArrowLeft' || c === 'ArrowRight' ||
+  c === 'KeyQ' || c === 'KeyE';
+window.addEventListener('keydown', (e) => {
+  if (_isHandled(e.code)) { _keys.add(e.code); e.preventDefault(); }
+});
+window.addEventListener('keyup', (e) => { _keys.delete(e.code); });
+
+let _lastT = performance.now();
+function _updateKeyboardCamera() {
+  const now = performance.now();
+  const dt  = Math.min(0.1, (now - _lastT) / 1000);
+  _lastT = now;
+  if (_keys.size === 0) return;
+
+  const dist  = camera.position.distanceTo(controls.target);
+  const speed = dist * 1.2 * dt;
+
+  const forward = new THREE.Vector3();
+  camera.getWorldDirection(forward);
+  const right = new THREE.Vector3().crossVectors(forward, camera.up).normalize();
+  const up    = camera.up.clone().normalize();
+
+  const move = new THREE.Vector3();
+  if (_keys.has('KeyW') || _keys.has('ArrowUp'))    move.add(forward);
+  if (_keys.has('KeyS') || _keys.has('ArrowDown'))  move.sub(forward);
+  if (_keys.has('KeyD') || _keys.has('ArrowRight')) move.add(right);
+  if (_keys.has('KeyA') || _keys.has('ArrowLeft'))  move.sub(right);
+  if (_keys.has('KeyE')) move.add(up);
+  if (_keys.has('KeyQ')) move.sub(up);
+
+  if (move.lengthSq() > 0) {
+    move.normalize().multiplyScalar(speed);
+    camera.position.add(move);
+    controls.target.add(move);
+  }
+}
+
+(function animate() {
+  requestAnimationFrame(animate);
+  _updateKeyboardCamera();
+  controls.update();
+  renderer.render(scene, camera);
+})();
+
+// ── Helpers ──────────────────────────────────────────────────────────────────
+
+/** Extract the first available edge array from a JSON object using a priority list of keys. */
+function extractEdges(data, preferredKeys) {
+  for (const k of preferredKeys) {
+    if (data[k]?.length) return data[k];
+  }
+  // Fallback: try all known edge keys
+  for (const k of ['xmseb', 'xmsebCpu', 'mseb', 'original']) {
+    if (data[k]?.length) return data[k];
+  }
+  return null;
+}
+
+/** Compute a normalisation transform (center + scale to ±50 unit cube). */
+function computeTransform(nodes) {
+  const bbox = new THREE.Box3();
+  for (const n of nodes) bbox.expandByPoint(new THREE.Vector3(n.x, n.y, n.z));
+  const center = new THREE.Vector3();
+  const size   = new THREE.Vector3();
+  bbox.getCenter(center);
+  bbox.getSize(size);
+  const scale = 100 / Math.max(size.x, size.y, size.z, 1e-6);
+  return function xf(pt) {
+    const q = Array.isArray(pt) ? { x: pt[0], y: pt[1], z: pt[2] } : pt;
+    return {
+      x: (q.x - center.x) * scale,
+      y: (q.y - center.y) * scale,
+      z: (q.z - center.z) * scale,
+    };
+  };
+}
+
+/** Build a THREE.LineSegments for an edge set. */
+function buildEdgeLines(edges, xf, color, opacity) {
+  const positions  = [];
+  const vertColors = DIRECTED ? [] : null;
+  const cStart     = new THREE.Color('#' + DIR_START);
+  const cEnd       = new THREE.Color('#' + DIR_END);
+  const tmp        = new THREE.Color();
+
+  for (const edge of edges) {
+    const pts = edge.points;
+    const n   = pts.length;
+    for (let i = 0; i < n - 1; i++) {
+      const a = xf(pts[i]);
+      const b = xf(pts[i + 1]);
+      positions.push(a.x, a.y, a.z, b.x, b.y, b.z);
+      if (DIRECTED) {
+        tmp.copy(cStart).lerp(cEnd, i / (n - 1));
+        vertColors.push(tmp.r, tmp.g, tmp.b);
+        tmp.copy(cStart).lerp(cEnd, (i + 1) / (n - 1));
+        vertColors.push(tmp.r, tmp.g, tmp.b);
+      }
+    }
+  }
+
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+  if (DIRECTED) geo.setAttribute('color', new THREE.Float32BufferAttribute(vertColors, 3));
+
+  const mat = new THREE.LineBasicMaterial({
+    color:        DIRECTED ? 0xffffff : color,
+    vertexColors: DIRECTED,
+    transparent:  true,
+    opacity:      opacity,
+    blending:     BLENDING,
+    depthWrite:   false,
+  });
+
+  return new THREE.LineSegments(geo, mat);
+}
+
+/** Build instanced node spheres. */
+function buildNodes(nodes, xf) {
+  const radius = Math.max(0.4, 100 / Math.sqrt(nodes.length) * 0.12) / 10;
+  const sgeo   = new THREE.SphereGeometry(radius, 10, 10);
+  const smat   = new THREE.MeshPhongMaterial({ color: NODE_INT, emissive: 0x2a2a2a, shininess: 60 });
+  const imesh  = new THREE.InstancedMesh(sgeo, smat, nodes.length);
+  const dummy  = new THREE.Object3D();
+  for (let i = 0; i < nodes.length; i++) {
+    const t = xf(nodes[i]);
+    dummy.position.set(t.x, t.y, t.z);
+    dummy.updateMatrix();
+    imesh.setMatrixAt(i, dummy.matrix);
+  }
+  imesh.instanceMatrix.needsUpdate = true;
+  return imesh;
+}
+
+// ── Data loading + rendering ─────────────────────────────────────────────────
+
+async function load() {
+  const lineObjects = {};  // algo key -> THREE.LineSegments
+  let nodes = null;
+  let xf    = null;
+
+  if (hasAlgoParams) {
+    // ── Multi-file mode: load each algorithm's file in parallel ────────────
+    const fetches = ALGORITHMS.map(algo => {
+      const url = p.get(algo.param);
+      if (!url) return Promise.resolve(null);
+      return fetch(url).then(r => r.ok ? r.json() : null).catch(() => null);
+    });
+
+    const results = await Promise.all(fetches);
+
+    // Extract nodes from the first successful file
+    for (const data of results) {
+      if (data?.nodes?.length) { nodes = data.nodes; break; }
+    }
+    if (!nodes?.length) {
+      console.error('viewer: no nodes found in any provided file');
+      return;
+    }
+
+    xf = computeTransform(nodes);
+
+    // Build edge lines for each available algorithm
+    for (let i = 0; i < ALGORITHMS.length; i++) {
+      const algo = ALGORITHMS[i];
+      const data = results[i];
+      if (!data) continue;
+      const edges = extractEdges(data, algo.edgeKeys);
+      if (!edges) continue;
+
+      const color   = EDGE_OVERRIDE ? ('#' + EDGE_HEX) : algo.color;
+      const opacity = OPACITY_PARAM != null ? parseFloat(OPACITY_PARAM) : algo.opacity;
+      const lines   = buildEdgeLines(edges, xf, color, opacity);
+      lines.visible = false;
+      scene.add(lines);
+      lineObjects[algo.key] = lines;
+    }
+  } else {
+    // ── Single-file fallback (backward compatible) ─────────────────────────
+    const data = await fetch(DATA_URL).then(r => { if (!r.ok) throw new Error(r.statusText); return r.json(); });
+    nodes = data.nodes;
+    if (!nodes?.length) {
+      console.error('viewer: no nodes in', DATA_URL);
+      return;
+    }
+
+    xf = computeTransform(nodes);
+
+    // Try to build lines for all available edge sets in the single file
+    for (const algo of ALGORITHMS) {
+      const edges = data[algo.edgeKeys[0]];
+      if (!edges?.length) continue;
+      const color   = EDGE_OVERRIDE ? ('#' + EDGE_HEX) : algo.color;
+      const opacity = OPACITY_PARAM != null ? parseFloat(OPACITY_PARAM) : algo.opacity;
+      const lines   = buildEdgeLines(edges, xf, color, opacity);
+      lines.visible = false;
+      scene.add(lines);
+      lineObjects[algo.key] = lines;
+    }
+
+    // If no keyed sets found, try the legacy MODE-based approach
+    if (Object.keys(lineObjects).length === 0) {
+      const modeMap = { xmseb: 'gpu', xmsebCpu: 'cpu', mseb: 'mseb', original: 'unbundled' };
+      const edges = data[MODE] ?? data.xmseb ?? data.original ?? [];
+      if (edges.length) {
+        const mappedKey = modeMap[MODE] ?? 'gpu';
+        const algo      = ALGORITHMS.find(a => a.key === mappedKey) ?? ALGORITHMS[0];
+        const color     = EDGE_OVERRIDE ? ('#' + EDGE_HEX) : algo.color;
+        const opacity   = OPACITY_PARAM != null ? parseFloat(OPACITY_PARAM) : algo.opacity;
+        const lines     = buildEdgeLines(edges, xf, color, opacity);
+        lines.visible   = true;
+        scene.add(lines);
+        lineObjects[algo.key] = lines;
+      }
+    }
+  }
+
+  const availableKeys = Object.keys(lineObjects);
+  if (availableKeys.length === 0) {
+    console.error('viewer: no edge data found');
+    return;
+  }
+
+  // Nodes
+  scene.add(buildNodes(nodes, xf));
+
+  // Determine initial active mode, skipping GPU if unsupported
+  let activeMode = MODE;
+  if (activeMode === 'gpu' && !GPU_SUPPORTED && lineObjects['cpu']) activeMode = 'cpu';
+  if (!lineObjects[activeMode]) {
+    activeMode = ALGORITHMS.map(a => a.key).find(k => lineObjects[k] && (k !== 'gpu' || GPU_SUPPORTED))
+                 ?? ALGORITHMS.map(a => a.key).find(k => lineObjects[k])
+                 ?? availableKeys[0];
+  }
+  lineObjects[activeMode].visible = true;
+
+  // Build toolbar
+  const toolbar  = document.getElementById('toolbar');
+  const notice   = document.getElementById('webgpu-notice');
+  if (IS_LIGHT_BG) toolbar.classList.add('light-bg');
+
+  if (availableKeys.length >= 2) {
+    for (const algo of ALGORITHMS) {
+      if (!lineObjects[algo.key]) continue;
+
+      const gpuDisabled = (algo.key === 'gpu' && !GPU_SUPPORTED);
+
+      const btn = document.createElement('button');
+      btn.className = 'algo-btn'
+        + (algo.key === activeMode ? ' active' : '')
+        + (gpuDisabled ? ' no-gpu' : '');
+      btn.textContent = algo.label;
+      btn.dataset.key = algo.key;
+      btn.style.setProperty('--algo-color', algo.color);
+      if (gpuDisabled) btn.title = 'WebGPU is not supported in this browser';
+
+      if (!gpuDisabled) {
+        btn.addEventListener('click', () => {
+          for (const [k, lines] of Object.entries(lineObjects)) {
+            lines.visible = (k === algo.key);
+          }
+          for (const b of toolbar.querySelectorAll('.algo-btn')) {
+            b.classList.toggle('active', b.dataset.key === algo.key);
+          }
+        });
+      }
+
+      toolbar.appendChild(btn);
+    }
+    toolbar.hidden = false;
+
+    // Show warning notice if the GPU option is present but unavailable
+    if (lineObjects['gpu'] && !GPU_SUPPORTED) {
+      notice.textContent = '⚠ WebGPU not supported — GPU option disabled';
+      if (IS_LIGHT_BG) notice.classList.add('light-bg-notice');
+      notice.hidden = false;
+    }
+  }
+
+  // Fit camera
+  const dist = 150;
+  camera.position.set(0, 0, dist);
+  camera.near = dist * 0.001;
+  camera.far  = dist * 100;
+  camera.updateProjectionMatrix();
+  controls.target.set(0, 0, 0);
+  controls.update();
+}
+
+load().catch(err => console.error('viewer load error:', err));
+</script>
+</body>
+</html>

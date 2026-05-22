@@ -1,0 +1,5 @@
+c_thr 0.5
+numcykles 9
+start_i 27
+bell 6
+smooth 2

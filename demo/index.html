@@ -1,0 +1,199 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>xMSEB — Edge Bundling Demo</title>
+  <link rel="stylesheet" href="style.css">
+
+  <!-- Three.js via importmap -->
+  <script type="importmap">
+  {
+    "imports": {
+      "three": "./vendor/three/three.module.js",
+      "three/addons/": "./vendor/three/addons/"
+    }
+  }
+  </script>
+
+  <!-- Emscripten WASM glue (sets window.BundlerModule) -->
+  <script src="../bundler_wasm/bundler.js"></script>
+</head>
+<body>
+
+  <aside id="panel">
+    <header>
+      <h1>xMSEB</h1>
+      <p>Extended Mean-Shift Edge Bundling</p>
+    </header>
+
+    <section class="section">
+      <h2>Dataset</h2>
+      <div class="dataset-row">
+        <select id="dataset-select"></select>
+        <span id="complexity-badge" class="badge" hidden></span>
+      </div>
+      <div id="custom-files" hidden>
+        <p class="custom-warning">Datasets with more than ~10 000 edges may crash the browser due to WebAssembly memory limits.</p>
+        <label class="file-label" id="label-nodes">
+          <span class="file-label-name">Nodes file <code>.txt</code></span>
+          <input type="file" id="nodes-file" accept=".txt">
+          <span class="file-display" id="nodes-display">Choose file…</span>
+        </label>
+        <label class="file-label" id="label-edges">
+          <span class="file-label-name">Edges file <code>.txt</code></span>
+          <input type="file" id="edges-file" accept=".txt">
+          <span class="file-display" id="edges-display">Choose file…</span>
+        </label>
+        <div class="custom-or">or</div>
+        <label class="file-label" id="label-vtk">
+          <span class="file-label-name">VTK file <code>.vtk</code></span>
+          <input type="file" id="vtk-file" accept=".vtk">
+          <span class="file-display" id="vtk-display">Choose file…</span>
+        </label>
+      </div>
+    </section>
+
+    <section class="section">
+      <h2>Parameters</h2>
+
+      <div class="param-row">
+        <div class="param-header">
+          <label for="c_thr">Compatibility</label>
+          <code>c_thr</code>
+        </div>
+        <div class="param-controls">
+          <input type="range" id="c_thr" min="0" max="1" step="0.05" value="0.8">
+          <input type="number" id="c_thr-num" min="0" max="1" step="0.05" value="0.8">
+        </div>
+      </div>
+
+      <div class="param-row">
+        <div class="param-header">
+          <label for="numcycles">Cycles</label>
+          <code>numcycles</code>
+        </div>
+        <div class="param-controls">
+          <input type="range" id="numcycles" min="1" max="15" step="1" value="7">
+          <input type="number" id="numcycles-num" min="1" max="15" step="1" value="7">
+        </div>
+      </div>
+
+      <div class="param-row">
+        <div class="param-header">
+          <label for="start_i">Iterations</label>
+          <code>start_i</code>
+        </div>
+        <div class="param-controls">
+          <input type="range" id="start_i" min="1" max="80" step="1" value="10">
+          <input type="number" id="start_i-num" min="1" max="80" step="1" value="10">
+        </div>
+      </div>
+
+      <div class="param-row">
+        <div class="param-header">
+          <label for="bell">Kernel width</label>
+          <code>bell</code>
+        </div>
+        <div class="param-controls">
+          <input type="range" id="bell" min="0.5" max="15" step="0.5" value="8">
+          <input type="number" id="bell-num" min="0.5" max="15" step="0.5" value="8">
+        </div>
+      </div>
+
+      <div class="param-row">
+        <div class="param-header">
+          <label for="smooth">Smooth steps</label>
+          <code>smooth</code>
+        </div>
+        <div class="param-controls">
+          <input type="range" id="smooth" min="0" max="10" step="1" value="3">
+          <input type="number" id="smooth-num" min="0" max="10" step="1" value="3">
+        </div>
+      </div>
+
+      <div class="param-row toggle-row">
+        <div class="param-header">
+          <label>Directed</label>
+          <code>directed</code>
+        </div>
+        <label class="toggle">
+          <input type="checkbox" id="directed">
+          <span class="toggle-track"><span class="toggle-thumb"></span></span>
+        </label>
+      </div>
+    </section>
+
+    <section class="section">
+      <h2>Colors</h2>
+
+      <div class="param-row toggle-row">
+        <div class="param-header"><label>xMSEB (GPU)</label></div>
+        <input type="color" class="color-swatch" id="color-bundled" value="#4fc3f7">
+      </div>
+      <div class="param-row toggle-row">
+        <div class="param-header"><label>xMSEB (CPU)</label></div>
+        <input type="color" class="color-swatch" id="color-xmseb-cpu" value="#ce93d8">
+      </div>
+      <div class="param-row toggle-row">
+        <div class="param-header"><label>MSEB</label></div>
+        <input type="color" class="color-swatch" id="color-mseb" value="#69f0ae">
+      </div>
+      <div class="param-row toggle-row">
+        <div class="param-header"><label>Unbundled</label></div>
+        <input type="color" class="color-swatch" id="color-original" value="#ff8a65">
+      </div>
+      <div class="param-row toggle-row">
+        <div class="param-header"><label>Directed</label></div>
+        <div class="gradient-swatch">
+          <input type="color" class="color-swatch" id="color-dir-start" value="#26c6da">
+          <span class="gradient-arrow">→</span>
+          <input type="color" class="color-swatch" id="color-dir-end" value="#ef5350">
+        </div>
+      </div>
+    </section>
+
+    <section class="section">
+      <h2>View</h2>
+      <div class="view-toggle">
+        <button class="view-btn active" id="btn-bundled">xMSEB (GPU)</button>
+        <button class="view-btn" id="btn-xmseb-cpu">xMSEB (CPU)</button>
+        <button class="view-btn" id="btn-mseb">MSEB</button>
+        <button class="view-btn" id="btn-original">Unbundled</button>
+      </div>
+      <div class="param-row toggle-row" style="margin-top:12px">
+        <div class="param-header">
+          <label>Light mode</label>
+        </div>
+        <label class="toggle">
+          <input type="checkbox" id="theme-toggle">
+          <span class="toggle-track"><span class="toggle-thumb"></span></span>
+        </label>
+      </div>
+      <div class="param-row toggle-row" style="margin-top:12px">
+        <div class="param-header">
+          <label>Screenshot</label>
+        </div>
+        <button class="view-btn" id="btn-screenshot">Save PNG</button>
+      </div>
+    </section>
+
+    <div id="status-bar">
+      <span id="status">Load a dataset to begin</span>
+    </div>
+  </aside>
+
+  <main id="viewport">
+    <canvas id="canvas"></canvas>
+    <div id="spinner" hidden><div class="spin-ring"></div></div>
+    <div id="empty-msg">
+      <div class="empty-inner">
+        <p>Load a nodes and edges file to begin</p>
+        <small>Serve this directory over HTTP — WASM requires a server</small>
+      </div>
+    </div>
+  </main>
+
+  <script type="module" src="main.js"></script>
+</body>
+</html>

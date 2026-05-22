@@ -1,0 +1,33 @@
+<div class="img-compare" style="position:relative;width:50%;aspect-ratio:4/3;overflow:hidden;cursor:col-resize;user-select:none;touch-action:none;border-radius:6px;">
+  <img src="{{ include.after }}" alt="After" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover;display:block;">
+  <div class="img-compare-before" style="position:absolute;inset:0;clip-path:inset(0 50% 0 0);">
+    <img src="{{ include.before }}" alt="Before" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover;display:block;">
+  </div>
+  <div class="img-compare-handle" style="position:absolute;top:0;bottom:0;left:50%;width:2px;background:#fff;transform:translateX(-50%);pointer-events:none;">
+    <div style="position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);width:40px;height:40px;background:#fff;border-radius:50%;display:flex;align-items:center;justify-content:center;color:#333;font-size:16px;box-shadow:0 2px 8px rgba(0,0,0,.4);font-family:sans-serif;">⇄</div>
+  </div>
+  {% if include.label_before or include.label_after %}
+  <span style="position:absolute;top:10px;left:10px;background:rgba(0,0,0,.55);color:#fff;padding:3px 10px;border-radius:4px;font-size:.78rem;font-family:sans-serif;pointer-events:none;">{{ include.label_before | default: "Before" }}</span>
+  <span style="position:absolute;top:10px;right:10px;background:rgba(0,0,0,.55);color:#fff;padding:3px 10px;border-radius:4px;font-size:.78rem;font-family:sans-serif;pointer-events:none;">{{ include.label_after | default: "After" }}</span>
+  {% endif %}
+</div>
+<script>
+(function(){
+  var wrap = document.currentScript.previousElementSibling;
+  var beforeDiv = wrap.querySelector('.img-compare-before');
+  var handle = wrap.querySelector('.img-compare-handle');
+  var dragging = false;
+  function setPos(clientX) {
+    var r = wrap.getBoundingClientRect();
+    var pct = Math.max(0, Math.min(100, (clientX - r.left) / r.width * 100));
+    beforeDiv.style.clipPath = 'inset(0 ' + (100 - pct) + '% 0 0)';
+    handle.style.left = pct + '%';
+  }
+  wrap.addEventListener('mousedown',  function(e){ dragging=true; setPos(e.clientX); e.preventDefault(); });
+  wrap.addEventListener('touchstart', function(e){ dragging=true; setPos(e.touches[0].clientX); }, {passive:true});
+  window.addEventListener('mousemove',  function(e){ if(dragging) setPos(e.clientX); });
+  window.addEventListener('touchmove',  function(e){ if(dragging) setPos(e.touches[0].clientX); }, {passive:true});
+  window.addEventListener('mouseup',  function(){ dragging=false; });
+  window.addEventListener('touchend', function(){ dragging=false; });
+})();
+</script>
